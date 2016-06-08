@@ -8,6 +8,7 @@ requirements:
   - $import: envvar-global.yml
   - class: InlineJavascriptRequirement
   - class: ShellCommandRequirement
+hints:
   - class: DockerRequirement
     #dockerImageId: scidap/star:v2.5.0b #not yet ready
     dockerImageId: scidap/star:v2.5.0b
