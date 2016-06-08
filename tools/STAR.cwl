@@ -7,6 +7,7 @@ class: CommandLineTool
 requirements:
   - $import: envvar-global.yml
   - class: InlineJavascriptRequirement
+  - class: ShellCommandRequirement
   - class: DockerRequirement
     #dockerImageId: scidap/star:v2.5.0b #not yet ready
     dockerPull: scidap/star:v2.5.0b
@@ -62,6 +63,7 @@ inputs:
       position: 1
       itemSeparator: ' '
       prefix: '--readFilesIn'
+      shellQuote: false
 
   - id: '#genomeFastaFiles'
     type:
@@ -79,38 +81,49 @@ inputs:
 
   - id: '#genomeDir'
     type:
-      - File
+      - {type: array, items: File}
       - string
     description: |
-      string: path to the directory where genome files are stored (if
-      runMode!=generateGenome) or will be generated (if runMode==generateGenome)
-    secondaryFiles: |
-      ${
-        var p=inputs.genomeDir.path.split('/').slice(0,-1).join('/');
-        return [
-          {"path": p+"/SA", "class":"File"},
-          {"path": p+"/SAindex", "class":"File"},
-          {"path": p+"/chrNameLength.txt", "class":"File"},
-          {"path": p+"/chrLength.txt", "class":"File"},
-          {"path": p+"/chrStart.txt", "class":"File"},
-          {"path": p+"/geneInfo.tab", "class":"File"},
-          {"path": p+"/sjdbList.fromGTF.out.tab", "class":"File"},
-          {"path": p+"/chrName.txt", "class":"File"},
-          {"path": p+"/exonGeTrInfo.tab", "class":"File"},
-          {"path": p+"/genomeParameters.txt", "class":"File"},
-          {"path": p+"/sjdbList.out.tab", "class":"File"},
-          {"path": p+"/exonInfo.tab", "class":"File"},
-          {"path": p+"/sjdbInfo.txt", "class":"File"},
-          {"path": p+"/transcriptInfo.tab", "class":"File"}
-        ];
-      }
+      string: path to the directory where genome files will be generated (runMode==generateGenome)
+      array of Files: STAR genome files (runMode!=generateGenome)
+#    secondaryFiles: |
+#      ${
+#        if (!Array.isArray(self)) return [];
+#        return self;
+#      }
     inputBinding:
       valueFrom: |
         ${
-              if (inputs.runMode != "genomeGenerate")
-                return inputs.genomeDir.path.split('/').slice(0,-1).join('/');
-              return inputs.genomeDir;
+            if (inputs.runMode == "genomeGenerate")
+              return runtime.outdir;
+            return self[0].path.replace(/[^\\\/]*$/, "");
         }
+
+#        var p=inputs.genomeDir.path;
+#        return [
+#          {"path": p+"/SA", "class":"File"},
+#          {"path": p+"/SAindex", "class":"File"},
+#          {"path": p+"/chrNameLength.txt", "class":"File"},
+#          {"path": p+"/chrLength.txt", "class":"File"},
+#          {"path": p+"/chrStart.txt", "class":"File"},
+#          {"path": p+"/geneInfo.tab", "class":"File"},
+#          {"path": p+"/sjdbList.fromGTF.out.tab", "class":"File"},
+#          {"path": p+"/chrName.txt", "class":"File"},
+#          {"path": p+"/exonGeTrInfo.tab", "class":"File"},
+#          {"path": p+"/genomeParameters.txt", "class":"File"},
+#          {"path": p+"/sjdbList.out.tab", "class":"File"},
+#          {"path": p+"/exonInfo.tab", "class":"File"},
+#          {"path": p+"/sjdbInfo.txt", "class":"File"},
+#          {"path": p+"/transcriptInfo.tab", "class":"File"}
+#        ];
+
+
+#      valueFrom: |
+#        ${
+#            if (inputs.runMode != "genomeGenerate")
+#              return self;
+#            return runtime.outdir;
+#        }
       position: 1
       prefix: '--genomeDir'
 
@@ -243,13 +256,11 @@ inputs:
   - id: '#sjdbFileChrStartEnd'
     type:
       - 'null'
-      - string
-    description: >
-      -
-
+      - {type: array, items: File}
+    description: |
       string(s): path to the files with genomic coordinates (chr <tab> start
       <tab> end <tab> strand) for the splice junction introns. Multiple files can
-      be supplied wand will be concatenated.
+      be supplied and will be concatenated.
     inputBinding:
       position: 1
       prefix: '--sjdbFileChrStartEnd'
@@ -641,6 +652,7 @@ inputs:
     inputBinding:
       position: 1
       prefix: '--outSAMattributes'
+      shellQuote: false
   - id: '#outSAMattrIHstart'
     type:
       - 'null'
@@ -807,7 +819,7 @@ inputs:
 
   - id: '#outBAMcompression'
     type: int
-    default: 10
+    default: -1
     description: |
       int: -1 to 10  BAM compression level, -1=default compression (6?), 0=no
       compression, 10=maximum compression
@@ -962,11 +974,11 @@ inputs:
   - id: '#outFilterMismatchNoverReadLmax'
     type:
       - 'null'
-      - int
+      - float
     description: >
       1
 
-      int: alignment will be output only if its ratio of mismatches to *read*
+      float: alignment will be output only if its ratio of mismatches to *read*
       length is less than this value
     inputBinding:
       position: 1
@@ -1284,7 +1296,7 @@ inputs:
   - id: '#alignIntronMin'
     type:
       - 'null'
-      - boolean
+      - int
     description: >
       21
 
@@ -1296,7 +1308,7 @@ inputs:
   - id: '#alignIntronMax'
     type:
       - 'null'
-      - boolean
+      - int
     description: >
       0
 
@@ -1308,7 +1320,7 @@ inputs:
   - id: '#alignMatesGapMax'
     type:
       - 'null'
-      - boolean
+      - int
     description: >
       0
 
@@ -1629,34 +1641,35 @@ inputs:
       prefix: '--twopass1readsN'
 outputs:
   - id: "#indices"
-    type: ["null",File]
+    type:
+      - "null"
+      - type: array
+        items: File
     outputBinding:
       glob: |
         ${
           if (inputs.runMode != "genomeGenerate")
-            return [];
-          return inputs.genomeDir+"/Genome";
+            return null;
+          return [
+            "Genome",
+            "SA",
+            "SAindex",
+            "chrLength.txt",
+            "chrName.txt",
+            "chrNameLength.txt",
+            "chrStart.txt",
+            "exonGeTrInfo.tab",
+            "exonInfo-240305264.tab",
+            "exonInfo-483605442.tab",
+            "exonInfo.tab",
+            "geneInfo.tab",
+            "genomeParameters.txt",
+            "sjdbInfo.txt",
+            "sjdbList.fromGTF.out.tab",
+            "sjdbList.out.tab",
+            "transcriptInfo.tab"
+          ];
         }
-    secondaryFiles: |
-      ${
-        var p=inputs.genomeDir;
-        return [
-          {"path": p+"/SA", "class":"File"},
-          {"path": p+"/SAindex", "class":"File"},
-          {"path": p+"/chrNameLength.txt", "class":"File"},
-          {"path": p+"/chrLength.txt", "class":"File"},
-          {"path": p+"/chrStart.txt", "class":"File"},
-          {"path": p+"/geneInfo.tab", "class":"File"},
-          {"path": p+"/sjdbList.fromGTF.out.tab", "class":"File"},
-          {"path": p+"/chrName.txt", "class":"File"},
-          {"path": p+"/exonGeTrInfo.tab", "class":"File"},
-          {"path": p+"/genomeParameters.txt", "class":"File"},
-          {"path": p+"/sjdbList.out.tab", "class":"File"},
-          {"path": p+"/exonInfo.tab", "class":"File"},
-          {"path": p+"/sjdbInfo.txt", "class":"File"},
-          {"path": p+"/transcriptInfo.tab", "class":"File"}
-        ];
-      }
 
   - id: "#aligned"
     type: ["null",File]
@@ -1676,37 +1689,50 @@ outputs:
                 return p+"Aligned.out.bam";
             }
           }
-    secondaryFiles: |
-       ${
-          var p=inputs.outFileNamePrefix?inputs.outFileNamePrefix:"";
-          return [
-            {"path": p+"Log.final.out", "class":"File"},
-            {"path": p+"SJ.out.tab", "class":"File"},
-            {"path": p+"Log.out", "class":"File"}
-          ];
-       }
+#    secondaryFiles: |
+#       ${
+#          var p=inputs.outFileNamePrefix?inputs.outFileNamePrefix:runtime.outdir+"/";
+#          return [
+#            {"path": p+"Log.final.out", "class":"File"},
+#            {"path": p+"SJ.out.tab", "class":"File"},
+#            {"path": p+"Log.out", "class":"File"}
+#          ];
+#       }
 
   - id: "#mappingstats"
-    type: ["null", string]
+    type: ["null", {type: array, items: File}]
     outputBinding:
-      loadContents: true
       glob: |
-          ${
-            if (inputs.runMode == "genomeGenerate")
-              return [];
+        ${
+          var p=inputs.outFileNamePrefix?inputs.outFileNamePrefix:"";
+          return [
+            p+"Log.final.out",
+            p+"SJ.out.tab",
+            p+"Log.out"
+          ]
+        }
 
-            var p = inputs.outFileNamePrefix?inputs.outFileNamePrefix:"";
-            return p+"Log.final.out";
-          }
-      outputEval: |
-          ${
-            if (inputs.runMode == "genomeGenerate")
-              return "";
+  - id: "#readspergene"
+    type: ["null", File]
+    outputBinding:
+      glob: |
+        ${
+          var p=inputs.outFileNamePrefix?inputs.outFileNamePrefix:"";
+          return p+"ReadsPerGene.out.tab";
+        }
 
-            var s = self[0].contents.replace(/[ ]+.*?:\n|[ ]{2,}|\n$/g,"").
-                split(/\n{1,2}/g).map(function(v){var s=v.split(/\|\t/g); var o={}; o[s[0]]=s[1]; return o;})
-            return JSON.stringify(s);
-          }
+  - id: "#transcriptomesam"
+    type: ["null", File]
+    outputBinding:
+      glob: |
+        ${
+          if (inputs.quantMode != "TranscriptomeSAM")
+            return null;
+          var p=inputs.outFileNamePrefix?inputs.outFileNamePrefix:"";
+          return p+"Aligned.toTranscriptome.out.bam";
+        }
+
+
 
 baseCommand: ["STAR"]
 
